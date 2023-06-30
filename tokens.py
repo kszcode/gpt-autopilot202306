@@ -15,6 +15,7 @@ token_usage = {
 prev_tokens_total = 0
 prev_price_total = 0
 
+
 def get_token_price(model, direction):
     if model == "gpt-4-0613":
         token_price_input = 0.03 / 1000
@@ -36,6 +37,7 @@ def get_token_price(model, direction):
         return token_price_input
     else:
         return token_price_output
+
 
 def add(response, model):
     global token_usage
@@ -82,6 +84,7 @@ def add(response, model):
     if "max-price" in cmd_args.args and total_price >= float(cmd_args.args["max-price"]):
         print("ERROR:    Maximum price limit reached: " + str(cmd_args.args["max-price"]) + " USD")
         sys.exit(1)
+
 
 def get_token_cost(model, input_tokens=None, output_tokens=None):
     global token_usage

@@ -12,39 +12,51 @@ import checklist
 import cmd_args
 import paths
 
+import logging
+import json
+
+logging.basicConfig(filename='logfile.txt', level=logging.INFO)
+
+
 def redact_always(messages):
     messages_redact = copy.deepcopy(messages)
     for msg in messages_redact:
         if msg["role"] == "user" and "APPEND_OK" in msg["content"]:
-            msg["content"] = "File appended succesfully"
+            msg["content"] = "File appended successfully"
             break
     return messages_redact
+
 
 def redact_messages(messages):
     messages_redact = copy.deepcopy(messages)
     for msg in messages_redact:
-        if msg["role"] == "assistant" and msg["content"] not in [None, "<message redacted>"]:
+        if msg["role"] == "assistant" \
+                and msg["content"] not in [None, "<message redacted>"]:
             msg["content"] = "<message redacted>"
             break
-        if msg["role"] == "function" and msg["name"] == "read_file" and msg["content"] not in [None, "<file contents redacted>"]:
+        if msg["role"] == "function" \
+                and msg["name"] == "read_file" \
+                and msg["content"] not in [None, "<file contents redacted>"]:
             msg["content"] = "<file contents redacted>"
             break
     return messages_redact
 
+
 # ChatGPT API Function
 
 def send_message(
-    message,
-    messages,
-    model = "gpt-4-0613",
-    function_call = "auto",
-    retries = 0,
-    print_message = True,
-    conv_id = None,
-    temp = 0.9,
+        message,
+        messages,
+        model="gpt-4-0613",
+        function_call="auto",
+        retries=0,
+        print_message=True,
+        conv_id=None,
+        temp=0.9,
 ):
     # add user message to message list
     messages.append(message)
+    logging.info(f"Added message to messages:\n{json.dumps(message, indent=4)}")  # Log messages
 
     # redact old messages when encountering partial output
     if "No END_OF_FILE_CONTENT" in message["content"]:
@@ -62,8 +74,8 @@ def send_message(
 
     if gpt_functions.tasklist != [] or checklist.active_list != []:
         remove_funcs = [
-            "make_tasklist", # don't take any more task lists if there is one already
-            "project_finished" # don't allow project_finished function when task list is unfinished
+            "make_tasklist",  # don't take any more task lists if there is one already
+            "project_finished"  # don't allow project_finished function when task list is unfinished
         ]
 
         definitions = [definition for definition in definitions if definition["name"] not in remove_funcs]
@@ -96,6 +108,12 @@ def send_message(
     print("GPT-API:  Waiting... ", end="", flush=True)
 
     try:
+        logging.info(f"Model: {model}")
+        logging.info(f"Messages:\n{json.dumps(messages, indent=4)}")
+        logging.info(f"Functions:\n{json.dumps(definitions, indent=4)}")
+        logging.info(f"Function_call: {function_call}")
+        logging.info(f"Temperature: {temp}")
+
         # send prompt to chatgpt
         response = openai.ChatCompletion.create(
             model=model,
@@ -105,16 +123,17 @@ def send_message(
             temperature=temp,
             request_timeout=60,
         )
+        logging.info(f"Response:\n{json.dumps(response, indent=4)}")
 
         tokens.add(response, model)
-        request_tokens = response["usage"]["total_tokens"] # type: ignore
+        request_tokens = response["usage"]["total_tokens"]  # type: ignore
         total_tokens = int(tokens.token_usage["total"])
         token_cost = round(tokens.get_token_cost(model), 2)
         print(f"OK! (+{request_tokens} tokens, total {total_tokens} / {token_cost} USD)")
-    except openai.error.AuthenticationError: # type: ignore
+    except openai.error.AuthenticationError:  # type: ignore
         print("\nAuthenticationError: Check your API-key")
         sys.exit(1)
-    except openai.InvalidRequestError as e: # type: ignore
+    except openai.InvalidRequestError as e:  # type: ignore
         if "maximum context length" in str(e):
             print("\nNOTICE:   Context limit reached, redacting old messages...")
 
@@ -136,12 +155,12 @@ def send_message(
             message=message,
             messages=messages,
             model=model,
-            function_call=function_call, # type: ignore
+            function_call=function_call,  # type: ignore
             conv_id=conv_id,
             print_message=print_message,
             temp=temp,
         )
-    except openai.error.PermissionError: # type: ignore
+    except openai.error.PermissionError:  # type: ignore
         raise
     except TypeError:
         raise
@@ -166,8 +185,8 @@ def send_message(
             message=message,
             messages=messages,
             model=model,
-            function_call=function_call, # type: ignore
-            retries=retries+1,
+            function_call=function_call,  # type: ignore
+            retries=retries + 1,
             conv_id=conv_id,
             print_message=print_message,
             temp=temp,
@@ -177,10 +196,10 @@ def send_message(
     messages = redact_always(messages)
 
     # add response to message list
-    messages.append(response["choices"][0]["message"]) # type: ignore
+    messages.append(response["choices"][0]["message"])  # type: ignore
 
     # get message content
-    response_message = response["choices"][0]["message"]["content"] # type: ignore
+    response_message = response["choices"][0]["message"]["content"]  # type: ignore
 
     # if response includes content, print it out
     if print_message and response_message != None:

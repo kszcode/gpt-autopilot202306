@@ -14,6 +14,7 @@ tasklist_finished = True
 
 clarification_asked = 0
 
+
 # Implementation of the functions given to ChatGPT
 
 def make_tasklist(tasks):
@@ -26,7 +27,7 @@ def make_tasklist(tasks):
     all_tasks += "TASKLIST: 1. " + next_task + "\n"
 
     for number, item in enumerate(tasks):
-        all_tasks += "          " + str( number + 2 ) + ". " + item + "\n"
+        all_tasks += "          " + str(number + 2) + ". " + item + "\n"
 
     print(all_tasks, end="")
 
@@ -45,18 +46,28 @@ def make_tasklist(tasks):
     tasklist_finished = False
 
     print("TASK:     " + next_task)
-    return "TASK_LIST_RECEIVED: Start with first task: " + next_task + ". Do all the steps involved in the task and only then run the task_finished function. If the task is already done in a previous task, you can call task_finished right away"
+    return "TASK_LIST_RECEIVED: Start with first task: " \
+        + next_task \
+        + ". " \
+          "Do all the steps involved in the task and only then run the task_finished function. " \
+          "If the task is already done in a previous task, you can call task_finished right away"
 
-def file_open_for_writing(filename, content = ""):
+
+def file_open_for_writing(filename, content=""):
     filename = relpath(safepath(filename))
     print(f"FUNCTION: Writing to file {filename}...")
-    return f"Please respond in your next response with the full content of the file {filename}. Respond only with the contents of the file, no explanations. Create a fully working, complete file with no limitations on file size. Put file content between lines START_OF_FILE_CONTENT and END_OF_FILE_CONTENT. Start your response with START_OF_FILE_CONTENT"
+    return f"Please respond in your next response with the full content of the file {filename}. " \
+           f"Respond only with the contents of the file, no explanations. " \
+           f"Create a fully working, complete file with no limitations on file size. " \
+           f"Put file content between lines START_OF_FILE_CONTENT and END_OF_FILE_CONTENT. " \
+           f"Start your response with START_OF_FILE_CONTENT"
 
-def replace_text(find, replace, filename, count = -1):
+
+def replace_text(find, replace, filename, count=-1):
     fullpath = safepath(filename)
     relative = relpath(fullpath)
 
-    if ( len(find) + len(replace) ) > 37:
+    if (len(find) + len(replace)) > 37:
         print(f"FUNCTION: Replacing text in {relative}...")
     else:
         print(f"FUNCTION: Replacing '{find}' with '{replace}' in {relative}...")
@@ -74,10 +85,12 @@ def replace_text(find, replace, filename, count = -1):
 
     return "Text replaced successfully"
 
-def file_open_for_appending(filename, content = ""):
+
+def file_open_for_appending(filename, content=""):
     filename = relpath(safepath(filename))
     print(f"FUNCTION: Appending to file {filename}...")
     return f"Please respond in your next response with the full text to append to the end of the file {filename}. Respond only with the contents to add to the end of the file, no explanations. Create a fully working, complete file with no limitations on file size. Put file content between lines START_OF_FILE_CONTENT and END_OF_FILE_CONTENT. Start your response with START_OF_FILE_CONTENT"
+
 
 def read_file(filename):
     fullpath = safepath(filename)
@@ -91,6 +104,7 @@ def read_file(filename):
         content = f.read()
     return f"The contents of '{relative}':\n{content}"
 
+
 def create_dir(directory):
     fullpath = safepath(directory)
     relative = relpath(fullpath)
@@ -103,6 +117,7 @@ def create_dir(directory):
     else:
         os.makedirs(fullpath)
         return f"Directory {relative} created!"
+
 
 def move_file(source, destination):
     source = safepath(source)
@@ -126,6 +141,7 @@ def move_file(source, destination):
 
     return f"Moved {source} to {destination}"
 
+
 def copy_file(source, destination):
     source = safepath(source)
     destination = safepath(destination)
@@ -148,6 +164,7 @@ def copy_file(source, destination):
 
     return f"File {rel_source} copied to {rel_destination}"
 
+
 def delete_file(filename):
     fullpath = safepath(filename)
     relative = relpath(fullpath)
@@ -168,7 +185,8 @@ def delete_file(filename):
 
     return f"File {relative} successfully deleted"
 
-def list_files(list = "", print_output = True):
+
+def list_files(list="", print_output=True):
     files_by_depth = {}
     directory = codedir()
 
@@ -194,8 +212,11 @@ def list_files(list = "", print_output = True):
     # Remove code folder from the beginning of file paths
     files = [relpath(file_path) for file_path in files]
 
-    if print_output: print(f"FUNCTION: Listing files in project directory")
+    if print_output:
+        print(f"FUNCTION: Listing files in project directory")
+
     return f"The following files are currently in the project directory:\n{files}"
+
 
 def ask_clarification(questions):
     global clarification_asked
@@ -213,6 +234,7 @@ def ask_clarification(questions):
     print()
 
     return answers
+
 
 def run_cmd(base_dir, command, reason, asynch=False):
     base_dir = safepath(base_dir)
@@ -306,10 +328,12 @@ def run_cmd(base_dir, command, reason, asynch=False):
     else:
         return "I don't want to run that command"
 
+
 def project_finished(finished=True):
     global tasklist_finished
     tasklist_finished = True
     return "PROJECT_FINISHED"
+
 
 def task_finished(finished=True):
     global tasklist
@@ -324,12 +348,14 @@ def task_finished(finished=True):
     tasklist_finished = True
     return "PROJECT_FINISHED"
 
+
 # Function definitions for ChatGPT
 
 make_tasklist_func = {
     "name": "make_tasklist",
     "description": """
-Convert the next steps to be taken into a list of tasks and pass them as a list into this function. Don't add already done tasks.
+Convert the next steps to be taken into a list of tasks and pass them as a list into this function. 
+Don't add already done tasks.
 Explain the task clearly so that there can be no misunderstandings.
 Don't include testing or other operations that require user interaction, unless specifically asked.
 For a trivial project, make just one task
@@ -399,7 +425,9 @@ definitions = [
     },
     {
         "name": "file_open_for_writing",
-        "description": "Open a file for writing. Existing files will be overwritten. Parent directories will be created if they don't exist. Content of file will be asked in the next prompt.",
+        "description": "Open a file for writing. Existing files will be overwritten. "
+                       "Parent directories will be created if they don't exist. "
+                       "Content of file will be asked in the next prompt.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -423,7 +451,7 @@ definitions = [
                 },
                 "replace": {
                     "type": "string",
-                    "description": "The text to replace the occurences with",
+                    "description": "The text to replace the occurrences with",
                 },
                 "filename": {
                     "type": "string",
@@ -431,7 +459,7 @@ definitions = [
                 },
                 "count": {
                     "type": "number",
-                    "description": "The number of occurences to replace (default = all occurences)",
+                    "description": "The number of occurrences to replace (default = all occurrences)",
                 },
             },
             "required": ["find", "replace", "filename"],
@@ -439,7 +467,8 @@ definitions = [
     },
     {
         "name": "file_open_for_appending",
-        "description": "Open a file for appending content to the end of a file with given name (after the last line). The content to append will be given in the next prompt",
+        "description": "Open a file for appending content to the end of a file with given name (after the last line). "
+                       "The content to append will be given in the next prompt",
         "parameters": {
             "type": "object",
             "properties": {
@@ -546,7 +575,8 @@ definitions = [
     },
     {
         "name": "run_cmd",
-        "description": "Run a terminal command. Returns the output. Folder navigation commands are disallowed. Do it with base_dir",
+        "description": "Run a terminal command. Returns the output. "
+                       "Folder navigation commands are disallowed. Do it with base_dir",
         "parameters": {
             "type": "object",
             "properties": {
@@ -571,6 +601,7 @@ definitions = [
         },
     },
 ]
+
 
 def get_definitions(model):
     global definitions

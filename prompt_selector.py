@@ -9,6 +9,7 @@ import checklist
 import cmd_args
 import paths
 
+
 def detect_slug(prompt, model, temp):
     slugs = []
 
@@ -62,7 +63,7 @@ Available slugs are:\n
 
     tokens.add(response, model)
 
-    slug = json.loads(response["choices"][0]["message"]["function_call"]["arguments"]) # type: ignore
+    slug = json.loads(response["choices"][0]["message"]["function_call"]["arguments"])  # type: ignore
     slug = slug["slug"]
 
     if slug not in slugs:
@@ -74,6 +75,7 @@ Available slugs are:\n
         print()
 
     return slug
+
 
 def get_data(prompt, model, temp, slug=None):
     if slug is None:
@@ -106,6 +108,7 @@ def get_data(prompt, model, temp, slug=None):
         sys.exit(1)
 
     return data
+
 
 def select_system_message(prompt, model, temp):
     if "system" in cmd_args.args:

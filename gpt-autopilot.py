@@ -24,11 +24,14 @@ import paths
 
 CONFIG = get_config()
 
+
 def compact_commands(messages):
     for msg in messages:
         if msg["role"] == "function" and msg["name"] == "file_open_for_writing":
-            msg["content"] = "Respond with file content. Put file content between lines START_OF_FILE_CONTENT and END_OF_FILE_CONTENT"
+            msg["content"] = "Respond with file content. " \
+                             "Put file content between lines START_OF_FILE_CONTENT and END_OF_FILE_CONTENT"
     return messages
+
 
 def remove_hallucinations(messages):
     for msg in messages:
@@ -42,20 +45,22 @@ def remove_hallucinations(messages):
                 continue
     return messages
 
+
 def unwrap_comments(content, tags):
     for tag in tags:
         # Remove HTML-style comments
-        content = re.sub(r"<!--([\s]+)?"+tag+r"([\s]+)?-->", tag, content, flags=re.DOTALL)
+        content = re.sub(r"<!--([\s]+)?" + tag + r"([\s]+)?-->", tag, content, flags=re.DOTALL)
 
         # Remove C-style comments
-        content = re.sub(r"/\*([\s]+)?"+tag+r"([\s]+)?\*/", tag, content, flags=re.DOTALL)
+        content = re.sub(r"/\*([\s]+)?" + tag + r"([\s]+)?\*/", tag, content, flags=re.DOTALL)
 
         # Remove PHP-style comments
-        content = re.sub(r"//([\s]+)?"+tag+r"([\s]+)?$", tag, content, flags=re.MULTILINE)
+        content = re.sub(r"//([\s]+)?" + tag + r"([\s]+)?$", tag, content, flags=re.MULTILINE)
 
         # Remove Python-style comments
-        content = re.sub(r"#([\s]+)?"+tag+r"$", tag, content, flags=re.MULTILINE)
+        content = re.sub(r"#([\s]+)?" + tag + r"$", tag, content, flags=re.MULTILINE)
     return content
+
 
 def strip_markdown(content):
     content = content.strip()
@@ -63,6 +68,7 @@ def strip_markdown(content):
         content = re.sub(r"^\s*```[^\n]+\n", "", content)
         content = re.sub(r"\n```\s*$", "", content)
     return content
+
 
 def check_content_format(filename, content):
     # detect partial file content response
@@ -78,9 +84,12 @@ def check_content_format(filename, content):
     # detect gpt-3.5 stupidity
     if "`START_OF_FILE_CONTENT` and `END_OF_FILE_CONTENT`" in content:
         print(f"ERROR:    Invalid content format for {filename}...")
-        return "ERROR: Your response needs to start with START_OF_FILE_CONTENT and end with END_OF_FILE_CONTENT, with the file content in between. No other explanations. No apologies. Just the file content."
+        return "ERROR: Your response needs to start with START_OF_FILE_CONTENT and end with END_OF_FILE_CONTENT, " \
+               "with the file content in between. " \
+               "No other explanations. No apologies. Just the file content."
 
     return None
+
 
 def parse_file_content(content):
     # Sometimes ChatGPT makes the start and
@@ -103,6 +112,7 @@ def parse_file_content(content):
         content = content + "\n"
 
     return content
+
 
 def actually_write_file(filename, content):
     fullpath = safepath(filename)
@@ -127,6 +137,7 @@ def actually_write_file(filename, content):
     print(f"DONE:     Wrote to file {relative}")
     return f"File {relative} written successfully"
 
+
 def actually_append_file(filename, content):
     fullpath = safepath(filename)
     relative = relpath(fullpath)
@@ -149,17 +160,18 @@ def actually_append_file(filename, content):
 
     return f"APPEND_OK: File {relative} appended successfully. IMPORTANT: If you appended code to a file, you might have appended it after the main function or an event listener or other code scope accidentally. Please check the code and rewrite the whole file if you made a mistake. The content of the file is now this:\n\n{new_file_content}"
 
+
 def print_task_finished(model):
     tokens_total = int(tokens.token_usage["total"])
     totaltokens = str(tokens_total).rjust(13, " ")
 
     price_total = round(tokens.get_token_cost(model), 2)
-    total_price = (str(price_total)+" USD").rjust(13, " ")
+    total_price = (str(price_total) + " USD").rjust(13, " ")
 
     task_tokens = tokens_total - tokens.prev_tokens_total
     task_tokens = str(task_tokens).rjust(13, " ")
     task__price = round(price_total - tokens.prev_price_total, 2)
-    task__price = (str(task__price)+" USD").rjust(13, " ")
+    task__price = (str(task__price) + " USD").rjust(13, " ")
 
     print()
     print(f"###############################")
@@ -174,6 +186,7 @@ def print_task_finished(model):
     tokens.prev_tokens_total = tokens_total
     tokens.prev_price_total = price_total
 
+
 def ask_model_switch():
     if yesno("\nERROR: You don't seem to have access to the GPT-4 API. Would you like to change to GPT-3.5?") == "y":
         CONFIG["model"] = "gpt-3.5-turbo-16k-0613"
@@ -182,10 +195,12 @@ def ask_model_switch():
     else:
         sys.exit(1)
 
+
 def fix_function_name(function_name):
     if function_name in ["new_file", "create_file"]:
         return "file_open_for_writing"
     return function_name
+
 
 def fix_arguments(function_name, arguments):
     if function_name == "file_open_for_writing" and "path" in arguments:
@@ -195,6 +210,7 @@ def fix_arguments(function_name, arguments):
         arguments["questions"] = arguments["question"]
         del arguments["question"]
     return arguments
+
 
 def fix_json_arguments(arguments_plain, function_name):
     arguments_fixed = arguments_plain
@@ -223,9 +239,9 @@ def fix_json_arguments(arguments_plain, function_name):
                 arguments = json.loads(arguments_fixed)
             except:
                 print("ERROR:    Failed to fix function arguments")
-                #print("ERROR PARSING ARGUMENTS:\n---\n")
-                #print(arguments_plain)
-                #print("\n---\n")
+                # print("ERROR PARSING ARGUMENTS:\n---\n")
+                # print(arguments_plain)
+                # print("\n---\n")
 
                 if function_name == "replace_text":
                     function_response = "ERROR! Please try to replace a shorter text or try another method"
@@ -233,6 +249,7 @@ def fix_json_arguments(arguments_plain, function_name):
                     function_response = "Error parsing arguments. Make sure to use properly formatted JSON, with double quotes. If this error persist, change tactics"
 
     return (arguments, function_response)
+
 
 def function_list(model):
     func_list = ""
@@ -242,8 +259,9 @@ def function_list(model):
         func_list += ")\n"
     return func_list.strip()
 
+
 # MAIN FUNCTION
-def run_conversation(prompt, model = "gpt-4-0613", messages = [], conv_id = None, recursive = True, temp = 0.9):
+def run_conversation(prompt, model="gpt-4-0613", messages=[], conv_id=None, recursive=True, temp=0.9):
     if conv_id is None:
         conv_id = numberfile("history")
 
@@ -427,15 +445,15 @@ def run_conversation(prompt, model = "gpt-4-0613", messages = [], conv_id = None
                     user_message = "ERROR: Please use function calls"
                 # if chatgpt doesn't respond with a function call, ask user for input
                 elif "?" in message["content"] or \
-                   "Let me know" in message["content"] or \
-                   "Please provide" in message["content"] or \
-                   "Could you" in message["content"] or \
-                   "Can you" in message["content"] or \
-                   "Do you know" in message["content"] or \
-                   "Tell me" in message["content"] or \
-                   "Explain" in message["content"] or \
-                   "What is" in message["content"] or \
-                   "How does" in message["content"]:
+                        "Let me know" in message["content"] or \
+                        "Please provide" in message["content"] or \
+                        "Could you" in message["content"] or \
+                        "Can you" in message["content"] or \
+                        "Do you know" in message["content"] or \
+                        "Tell me" in message["content"] or \
+                        "Explain" in message["content"] or \
+                        "What is" in message["content"] or \
+                        "How does" in message["content"]:
                     if "continue" in cmd_args.args:
                         user_message = "Please continue with using the given functions."
                     else:
@@ -460,6 +478,7 @@ def run_conversation(prompt, model = "gpt-4-0613", messages = [], conv_id = None
 
         # save last response for the while loop
         message = messages[-1]
+
 
 def make_prompt_better(prompt, ask=True):
     print("\nMaking prompt better...")
@@ -493,6 +512,7 @@ def make_prompt_better(prompt, ask=True):
 
     return prompt
 
+
 def load_message_history(arguments):
     if "conv" in arguments:
         history_file = arguments["conv"]
@@ -508,13 +528,15 @@ def load_message_history(arguments):
 
     return messages
 
+
 def get_api_key():
     api_key = os.getenv("OPENAI_API_KEY")
     if api_key in [None, ""]:
         if "api_key" in CONFIG:
             api_key = CONFIG["api_key"]
         else:
-            print("Put your OpenAI API key into the config.json file or OPENAI_API_KEY environment variable to skip this prompt.\n")
+            print("Put your OpenAI API key into the config.json file "
+                  "or OPENAI_API_KEY environment variable to skip this prompt.\n")
             api_key = input("Input OpenAI API key: ").strip()
 
             if api_key == "":
@@ -527,6 +549,7 @@ def get_api_key():
             print()
     return api_key
 
+
 def warn_existing_code():
     if os.path.isdir(codedir()) and len(os.listdir(codedir())) != 0:
         if "delete" in cmd_args.args:
@@ -534,15 +557,15 @@ def warn_existing_code():
             return
 
         answer = yesno(
-            "#####################################################\n"+
-            "# WARNING!                                          #\n"+
-            "# There are already files in the project folder.    #\n"+
-            "# GPT-AutoPilot may base the project on these files #\n"+
-            "# and and might modify or delete them.              #\n"+
-            "#####################################################"+
-            "\n\n"+
-            gpt_functions.list_files("", False)+
-            "\n\n"+
+            "#####################################################\n" +
+            "# WARNING!                                          #\n" +
+            "# There are already files in the project folder.    #\n" +
+            "# GPT-AutoPilot may base the project on these files #\n" +
+            "# and and might modify or delete them.              #\n" +
+            "#####################################################" +
+            "\n\n" +
+            gpt_functions.list_files("", False) +
+            "\n\n" +
             "Do you want to continue?", ["YES", "NO", "DELETE"])
         if answer == "DELETE":
             reset_code_folder()
@@ -550,18 +573,21 @@ def warn_existing_code():
             sys.exit(0)
         print()
 
+
 def create_directories():
     dirs = ["code", "history", "versions"]
     for directory in dirs:
         if not os.path.isdir(directory):
             os.mkdir(directory)
 
+
 def get_temp(arguments):
     if "temp" in arguments:
         return arguments["temp"]
     return 0.9
 
-def maybe_make_prompt_better(prompt, args, version_loop = False):
+
+def maybe_make_prompt_better(prompt, args, version_loop=False):
     if version_loop == True and "better-versions" not in args:
         return prompt
     if "not-better" not in args:
@@ -571,7 +597,8 @@ def maybe_make_prompt_better(prompt, args, version_loop = False):
         print()
     return prompt
 
-def run_versions(prompt, args, version_messages, temp, prev_version = 1):
+
+def run_versions(prompt, args, version_messages, temp, prev_version=1):
     version_id = numberfile("versions", folder=True)
 
     if "versions" in args:
@@ -595,7 +622,7 @@ def run_versions(prompt, args, version_messages, temp, prev_version = 1):
     version_folders = []
     orig_messages = version_messages[prev_version]
 
-    for version in range(1, versions+1):
+    for version in range(1, versions + 1):
         # reset message history for every version
         messages = copy.deepcopy(orig_messages)
 
@@ -608,7 +635,7 @@ def run_versions(prompt, args, version_messages, temp, prev_version = 1):
 
         if version != 1:
             # randomize temperature for every version
-            temp = round( float(temp_orig) + random.uniform(-0.1, 0.1), 2 )
+            temp = round(float(temp_orig) + random.uniform(-0.1, 0.1), 2)
 
             # always start with original version
             shutil.copytree(ver_orig_dir, codedir())
@@ -635,11 +662,12 @@ def run_versions(prompt, args, version_messages, temp, prev_version = 1):
         print("\n# ALL VERSIONS FINISHED ##")
         print("You can find all versions here:")
         for number, verfolder in enumerate(version_folders):
-            print(f"- Version {number+1}: {verfolder}")
+            print(f"- Version {number + 1}: {verfolder}")
 
         next_up = 0
-        while int(next_up) not in range(1, versions+1):
-            next_up = input(f"\nIf you want to continue, please input version number to continue from (1-{versions}) (or 'exit' to quit): ")
+        while int(next_up) not in range(1, versions + 1):
+            next_up = input(
+                f"\nIf you want to continue, please input version number to continue from (1-{versions}) (or 'exit' to quit): ")
 
             if str(next_up) in ["exit", "quit", "e", "q"]:
                 sys.exit(0)
@@ -648,11 +676,12 @@ def run_versions(prompt, args, version_messages, temp, prev_version = 1):
         next_version = int(next_up)
 
         # move selected version to code folder and start over
-        shutil.copytree(version_folders[next_version-1], codedir())
+        shutil.copytree(version_folders[next_version - 1], codedir())
 
         prompt = input("GPT: What would you like to do next?\nYou: ")
         print()
         run_versions(prompt, args, version_messages, temp, next_version)
+
 
 def print_model_info():
     print("#######################################")
@@ -661,6 +690,7 @@ def print_model_info():
         print("# NOTICE:        GPT-4 is recommended #")
     print("#######################################")
     print()
+
 
 def override_model(model):
     if "model" in cmd_args.args:
@@ -672,6 +702,7 @@ def override_model(model):
         elif model in ["gpt-3-4k", "gpt3-4k", "gpt-3.5-4k", "gpt3.5-4k"]:
             model = "gpt-3.5-turbo-0613"
     return model
+
 
 # OVERRIDE MODEL
 CONFIG["model"] = str(override_model(CONFIG["model"]))
