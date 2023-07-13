@@ -1,26 +1,28 @@
 #!/usr/bin/env python3
 
-import openai
-import json
-import os
 import traceback
-import sys
+import openai
 import shutil
-import re
-import time
 import random
+import json
 import copy
+import time
+import sys
+import os
+import re
 
-import gpt_functions
-from helpers import yesno, safepath, codedir, numberfile, reset_code_folder, relpath
-import chatgpt
-import betterprompter
-from config import get_config, save_config
-import tokens
-import cmd_args
-import checklist
-import prompt_selector
-import paths
+from modules.helpers import yesno, safepath, codedir, numberfile, reset_code_folder, relpath
+from modules.config import get_config, save_config
+from modules import prompt_selector
+from modules import gpt_functions
+from modules import betterprompter
+from modules import filesystem
+from modules import checklist
+from modules import cmd_args
+from modules import chatgpt
+from modules import tokens
+from modules import paths
+from modules import git
 
 CONFIG = get_config()
 
@@ -116,13 +118,12 @@ def actually_write_file(filename, content):
 
     # Create parent directories if they don't exist
     parent_dir = os.path.dirname(fullpath)
-    os.makedirs(parent_dir, exist_ok=True)
+    filesystem.makedirs(parent_dir)
 
-    if os.path.isdir(fullpath):
+    if filesystem.isdir(fullpath):
         return "ERROR: There is already a directory with this name"
 
-    with open(fullpath, "w") as f:
-        f.write(content)
+    filesystem.write(fullpath, content)
 
     print(f"DONE:     Wrote to file {relative}")
     return f"File {relative} written successfully"
@@ -139,16 +140,14 @@ def actually_append_file(filename, content):
 
     # Create parent directories if they don't exist
     parent_dir = os.path.dirname(fullpath)
-    os.makedirs(parent_dir, exist_ok=True)
+    filesystem.makedirs(parent_dir, exist_ok=True)
 
-    if os.path.isdir(fullpath):
+    if filesystem.isdir(fullpath):
         return "ERROR: This is a directory, not a file"
 
-    with open(fullpath, "a") as f:
-        f.write(content)
+    filesystem.write(fullpath, content, "a")
 
-    with open(fullpath, "r") as f:
-        new_file_content = f.read()
+    new_file_content = filesystem.read(fullpath)
 
     return f"APPEND_OK: File {relative} appended successfully. IMPORTANT: If you appended code to a file, you might have appended it after the main function or an event listener or other code scope accidentally. Please check the code and rewrite the whole file if you made a mistake. The content of the file is now this:\n\n{new_file_content}"
 
@@ -199,54 +198,85 @@ def fix_arguments(function_name, arguments):
         del arguments["question"]
     return arguments
 
-def fix_json_arguments(arguments_plain, function_name):
-    arguments_fixed = arguments_plain
-    function_response = "ERROR: Invalid function arguments"
-    arguments = None
-
-    try:
-        # gpt-3.5 sometimes uses backticks
-        # instead of double quotes in JSON value
-        print("ERROR:    Invalid JSON arguments. Fixing...")
-        arguments_fixed = arguments_fixed.replace("`", '"')
-        arguments = json.loads(arguments_fixed)
-    except:
-        try:
-            # gpt-3.5 sometimes omits single quotes
-            # from around keys
-            print("ERROR:    Invalid JSON arguments. Fixing again...")
-            arguments_fixed = re.sub(r'(\b\w+\b)(?=\s*:)', r'"\1"', arguments_fixed)
-            arguments = json.loads(arguments_fixed)
-        except:
-            try:
-                # gpt-3.5 sometimes uses single quotes
-                # around keys, instead of double quotes
-                print("ERROR:    Invalid JSON arguments. Fixing third time...")
-                arguments_fixed = re.sub(r"'(\b\w+\b)'(?=\s*:)", r'"\1"', arguments_fixed)
-                arguments = json.loads(arguments_fixed)
-            except:
-                print("ERROR:    Failed to fix function arguments")
-                #print("ERROR PARSING ARGUMENTS:\n---\n")
-                #print(arguments_plain)
-                #print("\n---\n")
-
-                if function_name == "replace_text":
-                    function_response = "ERROR! Please try to replace a shorter text or try another method"
-                else:
-                    function_response = "Error parsing arguments. Make sure to use properly formatted JSON, with double quotes. If this error persist, change tactics"
-
-    return (arguments, function_response)
-
-def function_list(model):
+def function_list(model, exclude=[]):
     func_list = ""
     for func in gpt_functions.get_definitions(model):
+        if func["name"] in exclude:
+            continue
         func_list += func["name"] + "("
         func_list += ", ".join([key for key in func["parameters"]["properties"].keys()])
         func_list += ")\n"
     return func_list.strip()
 
+def parse_filename(arguments):
+    filename_pattern = r'"filename"\s*:\s*"([^"]*)"'
+    match = re.search(filename_pattern, arguments)
+    return match.group(1)
+
+def fix_json_arguments(function_name, arguments_plain, message):
+    if function_name == "write_file":
+        print("ERROR:    Switching to file_open_for_writing")
+        function_name = "file_open_for_writing"
+    elif function_name == "append_file":
+        print("ERROR:    Switching to file_open_for_appending")
+        function_name = "file_open_for_appending"
+    else:
+        print("ERROR:    Failed to parse arguments")
+        return (
+            function_name,
+            "ERROR: Failed to parse arguments",
+            message,
+            None,
+        )
+
+    arguments = {
+        "filename": parse_filename(arguments_plain)
+    }
+    message["function_call"]["name"] = function_name
+    message["function_call"]["arguments"] = json.dumps(arguments)
+
+    return (
+        function_name,
+        None,
+        message,
+        arguments,
+    )
+
+def create_zip():
+    if "zip-dir" in cmd_args.args:
+        zip_folder = cmd_args.args["zip-dir"]
+        if not os.path.isdir(zip_folder):
+            print("ERROR: Specified zip folder doesn't exist")
+            return
+    else:
+        zip_folder = "projects"
+        os.makedirs(paths.relative(zip_folder), exist_ok=True)
+
+    if "zip-name" in cmd_args.args:
+        zip_filename = os.path.basename(cmd_args.args["zip-name"])
+    else:
+        zip_filename = "project.zip"
+
+    unique_filename = zip_filename
+
+    num = 0
+    zip_filepath = paths.relative(zip_folder, unique_filename)
+    while os.path.exists(zip_filepath):
+        num += 1
+        unique_filename = zip_filename.removesuffix(".zip") + "-" + str(num) + ".zip"
+        zip_filepath = paths.relative(zip_folder, unique_filename)
+        if num > 1000:
+            print("ERROR: Too many projects in " + zip_folder + " folder")
+            return
+
+    filesystem.create_zip(zip_filepath)
+    print("###################################################################")
+    print("# The project has been saved to: " + relpath(zip_filepath, os.path.dirname(__file__)).rjust(32, " ") + " #")
+    print("###################################################################")
+    print()
+
 # MAIN FUNCTION
-def run_conversation(prompt, model = "gpt-4-0613", messages = [], conv_id = None, recursive = True, temp = 1.0, extra_messages = []):
+def run_conversation(prompt, model = "gpt-3.5-turbo-16k-0613", messages = [], conv_id = None, recursive = True, temp = 1.0, extra_messages = []):
     if conv_id is None:
         conv_id = numberfile(paths.relative("history"))
 
@@ -263,6 +293,9 @@ def run_conversation(prompt, model = "gpt-4-0613", messages = [], conv_id = None
 
         # take user message from last extra message
         user_message = messages.pop()
+
+    # save message history
+    chatgpt.save_message_history(conv_id, messages)
 
     # add user prompt to chatgpt messages
     try:
@@ -303,7 +336,7 @@ def run_conversation(prompt, model = "gpt-4-0613", messages = [], conv_id = None
             function_name = fix_function_name(function_name)
             function_response = "ERROR: Invalid parameters"
 
-            if not hasattr(gpt_functions, function_name):
+            if not gpt_functions.function_available(function_name, model):
                 print(f"NOTICE:   GPT called function '{function_name}' that doesn't exist.")
                 function_response = f"Function '{function_name}' does not exist. You can call these functions:"
                 function_response += function_list(model)
@@ -312,9 +345,17 @@ def run_conversation(prompt, model = "gpt-4-0613", messages = [], conv_id = None
                     # try to parse arguments
                     arguments = json.loads(arguments_plain)
 
-                # if parsing fails, try to fix format
+                # if parsing fails, switch file operation functions
                 except:
-                    arguments, function_response = fix_json_arguments(arguments_plain, function_name)
+                    try:
+                        function_name, function_response, message, arguments = fix_json_arguments(
+                            function_name,
+                            arguments_plain,
+                            message
+                        )
+                    except:
+                        print("ERROR:    Failed to fix arguments: " + str(e))
+                        function_response = "ERROR: Failed to parse arguments"
 
                 if arguments is not None:
                     # fix hallucinations
@@ -323,6 +364,9 @@ def run_conversation(prompt, model = "gpt-4-0613", messages = [], conv_id = None
                     # call the function given by chatgpt
                     try:
                         function_response = getattr(gpt_functions, function_name)(**arguments)
+
+                        if function_name not in ["task_finished", "project_finished", "make_tasklist"]:
+                            gpt_functions.task_operation_performed = True
 
                         if function_name == "file_open_for_writing":
                             mode = "WRITE_FILE"
@@ -378,6 +422,14 @@ def run_conversation(prompt, model = "gpt-4-0613", messages = [], conv_id = None
 
             # if function returns PROJECT_FINISHED, exit
             elif function_response == "PROJECT_FINISHED":
+                if "git" in cmd_args.args:
+                    commit = git.commit(copy.deepcopy(messages), model, temp)
+                    if commit is not None:
+                        messages.append(commit)
+
+                    # save message history
+                    chatgpt.save_message_history(conv_id, messages)
+
                 if recursive == False:
                     checklist.activate_checklist()
                     print_task_finished(model)
@@ -402,12 +454,52 @@ def run_conversation(prompt, model = "gpt-4-0613", messages = [], conv_id = None
                         sys.exit(0)
 
                     checklist.activate_checklist()
-                    next_message = yesno("GPT: Do you want to ask something else?\nYou:", ["y", "n"])
+                    next_message = yesno("GPT: Do you want to do something else?\nYou:", ["y", "n"])
                     print()
                     if next_message == "y":
-                        prompt = input("GPT: What do you want to ask?\nYou: ")
+                        git.print_help()
+
+                        prompt = input("GPT: What do you want to do?\nYou: ")
                         print()
+
+                        while "git" in cmd_args.args and prompt in ["revert", "retry"]:
+                            if git.commit_count > 1:
+                                if git.commit_count > 2:
+                                    end = ""
+                                else:
+                                    end = "\n"
+
+                                print("REVERT:   Reverted back to previous stage\n          ", end=end, flush=True)
+                                last_prompt, messages = git.revert(messages)
+                                print()
+                                # save message history
+                                chatgpt.save_message_history(conv_id, messages)
+
+                                if prompt == "retry":
+                                    prompt = last_prompt
+                                    last_prompt_trimmed = prompt.split("\n")[0]
+                                    print("RETRY:    " + last_prompt_trimmed + "...")
+                                    print()
+                                    break
+                            else:
+                                print("ERROR:    No commits to revert")
+                                print()
+
+                            git.print_help()
+                            prompt = input("GPT: What would you like to do next?\nYou: ")
+                            print()
+
+                        while "git" in cmd_args.args and prompt == "commit":
+                            prompt = git.own_commit()
+
+                            if prompt == False:
+                                print("ERROR: No changes have been made.\n")
+                                git.print_help()
+                                prompt = input("GPT: What would you like to do next?\nYou: ")
+                                print()
                     else:
+                        if "zip" in cmd_args.args:
+                            create_zip()
                         print("Exiting")
                         sys.exit(0)
 
@@ -437,7 +529,35 @@ def run_conversation(prompt, model = "gpt-4-0613", messages = [], conv_id = None
                 temp=temp,
             )
         else:
-            if mode == "WRITE_FILE":
+            if chatgpt.create_outline:
+                chatgpt.create_outline = False
+
+                # remove prompt about creating outline
+                messages.pop(-2)
+
+                # remove old outline
+                if gpt_functions.modify_outline:
+                    messages.pop(-2)
+
+                if "use-outline" in cmd_args.args or yesno("\nGPT: Do you want to use this project outline?\nYou") == "y":
+                    user_message = "Thank you. Please continue to implement fully the complete project"
+
+                    # add outline to initial questions for versions
+                    gpt_functions.initial_questions.append({
+                        "role": "assistant",
+                        "content": message["content"]
+                    })
+                    gpt_functions.initial_questions.append({
+                        "role": "user",
+                        "content": user_message
+                    })
+                else:
+                    changes = input("\nGPT: What would you like to modify? (type 'skip' to skip outline)\nYou: ")
+                    user_message = "Thank you for the project outline. Please make the following changes to it and respond only with the new project outline in the first person: " + changes
+                    gpt_functions.modify_outline = True
+                    gpt_functions.outline_created = False
+                print()
+            elif mode == "WRITE_FILE":
                 user_message = actually_write_file(filename, message["content"])
 
                 if "ERROR" not in user_message:
@@ -462,7 +582,6 @@ def run_conversation(prompt, model = "gpt-4-0613", messages = [], conv_id = None
                     user_message = "ERROR: Please use function calls"
                 # if chatgpt doesn't respond with a function call, ask user for input
                 elif "?" in message["content"] or \
-                   "Let me know" in message["content"] or \
                    "Please provide" in message["content"] or \
                    "Could you" in message["content"] or \
                    "Can you" in message["content"] or \
@@ -478,7 +597,12 @@ def run_conversation(prompt, model = "gpt-4-0613", messages = [], conv_id = None
                         print()
                 else:
                     # if chatgpt doesn't ask a question, continue
-                    user_message = "Ok, continue."
+                    if gpt_functions.tasklist_finished:
+                        what_to_call = "project_finished"
+                    else:
+                        what_to_call = "task_finished"
+
+                    user_message = "OK. If there is anything left to do in the project, do it. Otherwise call " + what_to_call
 
             # send user message to chatgpt
             messages = chatgpt.send_message(
@@ -595,7 +719,7 @@ def warn_existing_code():
             "# and and might modify or delete them.              #\n"+
             "#####################################################"+
             "\n\n"+
-            gpt_functions.list_files("", False)+
+            gpt_functions.list_files("", print_output=False, ignore=[])+
             "\n\n"+
             "Do you want to continue?", ["YES", "NO", "DELETE"])
         if answer == "DELETE":
@@ -642,10 +766,10 @@ def run_versions(prompt, args, version_messages, temp, prev_version = 1):
     ver_orig_dir = os.path.join(version_dir, "orig")
 
     if versions > 1:
-        if not os.path.isdir(version_dir):
-            os.mkdir(version_dir)
+        if not filesystem.isdir(version_dir):
+            filesystem.makedirs(version_dir)
 
-        shutil.copytree(codedir(), ver_orig_dir)
+        filesystem.copytree(codedir(), ver_orig_dir)
         recursive = False
     else:
         recursive = True
@@ -674,7 +798,15 @@ def run_versions(prompt, args, version_messages, temp, prev_version = 1):
         extra_prompt += "\n\n" + gpt_functions.list_files()
 
         # add list of functions to first prompt
-        extra_prompt += "\n\nYou can call these functions: " + function_list(CONFIG["model"])
+        extra_prompt += "\n\nYou can call these functions among others: " + function_list(CONFIG["model"], exclude=[
+            "run_cmd",
+            "append_file",
+            "file_open_for_appending",
+            "replace_text",
+            "list_files",
+            "read_file",
+            "delete_file",
+        ])
 
     for version in range(1, versions+1):
         # reset message history for every version
@@ -726,7 +858,7 @@ def run_versions(prompt, args, version_messages, temp, prev_version = 1):
             temp = round( float(temp_orig) + random.uniform(-0.1, 0.1), 2 )
 
             # always start with original version
-            shutil.copytree(ver_orig_dir, codedir())
+            filesystem.copytree(ver_orig_dir, codedir())
 
         # RUN CONVERSATION
         messages = run_conversation(
@@ -740,8 +872,8 @@ def run_versions(prompt, args, version_messages, temp, prev_version = 1):
 
         if versions > 1:
             version_folder = os.path.join(version_dir, f"v{version}")
-            shutil.copytree(codedir(), version_folder)
-            shutil.rmtree(codedir())
+            filesystem.copytree(codedir(), version_folder)
+            filesystem.rmtree(codedir())
             version_folders.append(version_folder)
 
         # save message history of each version
@@ -764,7 +896,7 @@ def run_versions(prompt, args, version_messages, temp, prev_version = 1):
         next_version = int(next_up)
 
         # move selected version to code folder and start over
-        shutil.copytree(version_folders[next_version-1], codedir())
+        filesystem.copytree(version_folders[next_version-1], codedir())
 
         prompt = input("GPT: What would you like to do next?\nYou: ")
         print()
@@ -773,8 +905,6 @@ def run_versions(prompt, args, version_messages, temp, prev_version = 1):
 def print_model_info():
     print("#######################################")
     print("# USING MODEL: " + CONFIG["model"].rjust(22, " ") + " #")
-    if "gpt-4" not in CONFIG["model"]:
-        print("# NOTICE:        GPT-4 is recommended #")
     print("#######################################")
     print()
 
@@ -801,7 +931,8 @@ version_messages = {
 openai.api_key = get_api_key()
 
 # WARN IF THERE IS CODE ALREADY IN THE PROJECT
-warn_existing_code()
+if "zip" not in cmd_args.args:
+    warn_existing_code()
 
 # CREATE DATA DIRECTORIES
 create_directories()
@@ -819,5 +950,9 @@ if "prompt" in cmd_args.args:
 else:
     prompt = input("GPT: What would you like me to do?\nYou: ")
     print()
+
+# INITIALIZE GIT
+if "git" in cmd_args.args:
+    git.init()
 
 run_versions(prompt, cmd_args.args, version_messages, temp)
